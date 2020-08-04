@@ -19,6 +19,35 @@ class Deflate
 		@stream = text.unpack("C*")
 		@bytepos = 0
 		@bitpos = 0
+		check_gz
+	end
+
+	def check_gz
+		if @stream[@bytepos, 3] == [0x1f, 0x8b, 0x08]
+			flg = @stream[@bytepos + 3]
+			puts "gzip format, #{flg}, header #{@stream[@bytepos+4, 6].pack('C*').inspect}" if $DEBUG
+			# + u32 CRC + u32 textlen  footer
+			@bytepos += 10
+			if (flg >> 2) & 1 == 1
+				xlen = @stream[@bytepos] | (@stream[@bytepos+1] << 8)
+				puts "gz xtra #{@stream[@bytepos, xlen+2].pack('C*').inspect}" if $DEBUG
+				@bytepos += xlen + 2
+			end
+			if (flg >> 3) & 1 == 1
+				fnlen = @stream[@bytepos..-1].index(0) + 1
+				puts "gz fname #{@stream[@bytepos, fnlen].pack('C*').inspect}" if $DEBUG
+				@bytepos += fnlen
+			end
+			if (flg >> 4) & 1 == 1
+				fnlen = @stream[@bytepos..-1].index(0) + 1
+				puts "gz comment #{@stream[@bytepos, fnlen].pack('C*').inspect}" if $DEBUG
+				@bytepos += fnlen
+			end
+			if (flg >> 1) & 1 == 1
+				puts "gz hcrc #{@stream[@bytepos, 2].pack('C*').inspect}" if $DEBUG
+				@bytepos += 2
+			end
+		end
 	end
 
 	def inflate
@@ -124,7 +153,6 @@ class Deflate
 	def decompress(dicts, out)
 		while !eos
 			curlit = read_huff(dicts[:lit])
-			puts "cur lit #{curlit}" if $DEBUG
 			case curlit
 			when 0..255
 				puts "litteral #{curlit.chr.inspect}" if $DEBUG
@@ -166,8 +194,9 @@ class Deflate
 			val |= readbit
 			count = dict[:count][len]
 			if val - count < first
-				puts "decoded huffman value #{val} len #{len}" if $DEBUG
-				return dict[:symbol][index + val - first]
+				sym = dict[:symbol][index + val - first]
+				puts "decoded huffman code #{val} len #{len} symbol #{sym}" if $DEBUG
+				return sym
 			end
 			index += count
 			first += count
@@ -205,8 +234,8 @@ class Deflate
 
 		lens.each_with_index { |l, sym|
 			if l > 0
+				out[:symbol][offs[l]] = sym
 				offs[l] += 1
-				out[:symbol][offs[l]-1] = sym
 			end
 		}
 
