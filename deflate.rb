@@ -189,7 +189,7 @@ class Deflate
 		first = 0	# first code of length len
 		index = 0	# index of first code of length len in symbol table
 
-		while len <= MAXBITS
+		while len < MAXBITS
 			len += 1
 			val |= readbit
 			count = dict[:count][len]
